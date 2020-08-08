@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+
+<head>
+    <title>Linak Desk Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <link rel="stylesheet" type="text/css"
+        href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css">
+</head>
+
+<body>
+    <script language="javascript" type="text/javascript">
+
+        var url = "ws://192.168.86.88/ws";
+        var output;
+        var button;
+        var canvas;
+        var context;
+        var upButton;
+        var downButton;
+        var currentValue;
+        var deviceTable;
+
+        // This is called when the page finishes loading
+        function init() {
+
+            // Assign page elements to variables
+            button = document.getElementById("toggleButton");
+            output = document.getElementById("output");
+            canvas = document.getElementById("led");
+            upButton = document.getElementById("upButton");
+            downButton = document.getElementById("downButton");
+            currentValue = document.getElementById("currentValue");
+            deviceTable = document.getElementById("device-table");
+
+            // Draw circle in canvas
+            context = canvas.getContext("2d");
+            context.arc(25, 25, 15, 0, Math.PI * 2, false);
+            context.lineWidth = 3;
+            context.strokeStyle = "black";
+            context.stroke();
+            context.fillStyle = "black";
+            context.fill();
+
+            // Connect to WebSocket server
+            wsConnect(url);
+        }
+
+        // Call this to connect to the WebSocket server
+        function wsConnect(url) {
+
+            // Connect to WebSocket server
+            websocket = new WebSocket(url);
+
+            // Assign callbacks
+            websocket.onopen = function (evt) { onOpen(evt) };
+            websocket.onclose = function (evt) { onClose(evt) };
+            websocket.onmessage = function (evt) { onMessage(evt) };
+            websocket.onerror = function (evt) { onError(evt) };
+        }
+
+        // Called when a WebSocket connection is established with the server
+        function onOpen(evt) {
+
+            // Log connection state
+            console.log("Connected");
+
+            // Enable button
+            button.disabled = false;
+        }
+
+        // Called when the WebSocket connection is closed
+        function onClose(evt) {
+
+            // Log disconnection state
+            console.log("Disconnected");
+
+            // Disable button
+            button.disabled = true;
+
+            // Try to reconnect after a few seconds
+            setTimeout(function () { wsConnect(url) }, 2000);
+        }
+
+        function connect(addr) {
+            console.log(`Trying to connect to ${addr}`);
+        }
+
+        // Called when a message is received from the server
+        function onMessage(evt) {
+
+            // Print out our received message
+            console.log("Received: " + evt.data);
+
+            try {
+                let response = JSON.parse(evt.data);
+                let led_on = response.led_state;
+                let devices = response.devices;
+                console.log(`LED is ${led_on ? "on" : "off"}`);
+                if (led_on) {
+                    context.fillStyle = "red";
+                } else {
+                    context.fillStyle = "black";
+                }
+                context.fill();
+                let current_value = response.current_value;
+                currentValue.textContent = current_value;
+
+                if (devices) {
+                    deviceTable.deleteRow(1);
+                    let rowNum = 1;
+                    for (var addr in devices) {
+                        console.log(addr);
+                        console.log(devices[addr]);
+                        const row = deviceTable.insertRow(rowNum);
+                        const cell1 = row.insertCell(0);
+                        const cell2 = row.insertCell(1);
+                        const cell3 = row.insertCell(2);
+                        cell1.innerHTML = devices[addr];
+                        cell2.innerHTML = addr;
+                        cell3.innerHTML = `<button id="connect-${rowNum}" onclick="connect('${addr}')">Connect</button>`
+                        rowNum++;
+                    }
+                }
+            } catch (err) {
+                console.log(`Couldn't parse response into JSON: ${err} (${evt.data})`);
+                return;
+            }
+        }
+
+        // Called when a WebSocket error occurs
+        function onError(evt) {
+            console.log("ERROR: " + evt.data);
+        }
+
+        // Sends a message to the server (and prints it to the console)
+        function doSend(message) {
+            console.log("Sending: " + message);
+            websocket.send(message);
+        }
+
+        // Called whenever the HTML button is pressed
+        function onPress() {
+            doSend("toggleLED");
+        }
+
+        function onUp() {
+            doSend("increment");
+        }
+
+        function onDown() {
+            doSend("decrement");
+        }
+
+        // Call the init function as soon as the page loads
+        window.addEventListener("load", init, false);
+
+    </script>
+
+    <div class="container">
+        <div class="row">
+            <h2>Linak DPG Desk Control</h2>
+        </div>
+        <div class="row">
+            <table class="u-full-width" id="device-table">
+                <thead>
+                    <tr>
+                        <th>Device Name</th>
+                        <th>Device Address</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Placeholder</td>
+                        <td>24:62:ab:e1:a8:00</td>
+                        <td><button id="connect-x">Connect</button></td>
+                    </tr>
+                    <tr>
+                        <td colspan="3"><button id="scan" class="u-full-width" onclick="doSend('doScan')">Scan</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="row">
+            <div class="one column">
+                <canvas id="led" width="50" height="50"></canvas>
+            </div>
+            <div class="eleven columns">
+                <button id="toggleButton" onclick="onPress()" disabled>Toggle LED</button>
+            </div>
+        </div>
+        <div class="row">
+            <div class="four columns">
+                <button id="upButton" onmousedown="onUp()">UP</button>
+                <button id="downButton" onmousedown="onDown()">DOWN</button>
+            </div>
+            Value: <span id="currentValue">--</span>
+        </div>
+    </div>
+</body>
