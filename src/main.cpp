@@ -62,13 +62,11 @@ void bufferJson(std::string &buf)
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
   IPAddress ip = client->remoteIP();
-  std::string strData = std::string((char *)data, len);
 
   switch (type)
   {
   case WS_EVT_CONNECT:
     // client connected
-    client->ping();
     Serial.print("Connection from: ");
     Serial.println(ip);
 
@@ -90,6 +88,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
       Serial.printf("ws[%s][%u] %s-message[%llu]: ", server->url(), client->id(), (info->opcode == WS_TEXT) ? "text" : "binary", info->len);
       if (info->opcode == WS_TEXT)
       {
+        bool sendResponse = true;
         data[len] = 0; // terminate the string
         Serial.println((char *)data);
 
@@ -128,11 +127,15 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
           // add this client to the list of clients interested in the results
           if (std::find(scanningClients.begin(), scanningClients.end(), clientId) == scanningClients.end())
             scanningClients.push_back(clientId);
+          sendResponse = false;
         }
-        //  send json object
-        bufferJson(msg_buf);
-        client->text(msg_buf.c_str());
-        Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
+
+        if (sendResponse) {
+          //  send json object
+          bufferJson(msg_buf);
+          client->text(msg_buf.c_str());
+          Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
+        }
       }
       else
       {
@@ -222,15 +225,14 @@ void setup()
   server.begin();
 
   // scan once on power-up
-  // deviceJson.devices = scanManager->scan();
-  // bufferJson(msg_buf);
-  // Serial.println("Sending data to all connected clients!");
-  // ws.printfAll(msg_buf.c_str());
+  deviceJson.devices = scanManager->scan();
+  bufferJson(msg_buf);
+  Serial.println("Sending data to all connected clients!");
+  ws.textAll(msg_buf.c_str());
 }
 
 void loop()
 {
-  return;
   if (shouldScan)
   {
     if (!scanManager->isScanning)
@@ -246,17 +248,21 @@ void loop()
     // prepare the JSON response after results are in
     bufferJson(msg_buf);
     // notify all interested clients
-    for (const auto &clientId : scanningClients)
+    for (const uint32_t &clientId : scanningClients)
     {
       Serial.printf("Trying to send to client [%u]\n", clientId);
-      if (ws.hasClient(clientId)){
-        ws.printf(clientId, msg_buf.c_str());
+      if (ws.hasClient(clientId))
+      {
+        ws.text(clientId, msg_buf.c_str());
         Serial.printf("Sent %s to %u\n", msg_buf.c_str(), clientId);
       }
-      else Serial.printf("Cannot find client [%u]\n", clientId);
+      else
+        Serial.printf("Cannot find client [%u]\n", clientId);
     }
 
     scanningClients.clear();
     shouldScan = false;
   }
+  ws.cleanupClients();
+  delay(500);
 }

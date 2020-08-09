@@ -3,8 +3,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-const int deviceJsonSize = JSON_OBJECT_SIZE(10);
-
 class AdvertisedDeviceCB : public BLEAdvertisedDeviceCallbacks
 {
 public:
