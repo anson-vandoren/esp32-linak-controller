@@ -8,10 +8,11 @@
 #include <util.h>
 #include <linakScanManager.h>
 
-void doScan(uint32_t clientId);
-
 LinakScanManager *scanManager;
 
+// NOTE: create a config.h file and in that file include the lines
+// #define WIFI_SSID "myWifiSsid"
+// #define WIFI_PASSWORD "mySuperSecretWifiPassword"
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
 const char *msg_toggle_led = "toggleLED";
@@ -25,6 +26,9 @@ std::string msg_buf;
 bool led_state = 0;
 uint16_t lastValue = 0;
 uint8_t lastNumDevices = 0;
+
+bool shouldScan = false;
+std::vector<uint32_t> scanningClients;
 
 struct JsonData
 {
@@ -44,11 +48,7 @@ void bufferJson(std::string &buf)
   doc["current_value"] = deviceJson.current_value;
   doc["time"] = deviceJson.millis;
 
-  if (deviceJson.devices.size() == 0)
-  {
-    doc["devices"] = "{}";
-  }
-  else
+  if (deviceJson.devices.size() != 0)
   {
     for (auto &kv : deviceJson.devices)
     {
@@ -72,7 +72,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
     Serial.print("Connection from: ");
     Serial.println(ip);
 
-    bufferJson(msg_buf);  // send JSON state on new connection
+    bufferJson(msg_buf); // send JSON state on new connection
     client->text(msg_buf.c_str());
     Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
     break;
@@ -85,7 +85,6 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
     AwsFrameInfo *info = (AwsFrameInfo *)arg;
     if (info->final && info->index == 0 && info->len == len)
     {
-      bool sendResponse = true;
       // entire message in a single frame and all its data is received
       // https://github.com/me-no-dev/ESPAsyncWebServer#async-websocket-plugin
       Serial.printf("ws[%s][%u] %s-message[%llu]: ", server->url(), client->id(), (info->opcode == WS_TEXT) ? "text" : "binary", info->len);
@@ -119,22 +118,21 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         else if (strcmp((char *)data, "decrement") == 0)
         {
           deviceJson.current_value--;
-        } else if (strcmp((char *)data, "doScan") == 0)
+        }
+        else if (strcmp((char *)data, "doScan") == 0)
         {
-          doScan(client->id());
-          sendResponse = false;
+          // tell the loop to start scanning
+          if (!shouldScan)
+            shouldScan = true;
+          uint32_t clientId = client->id();
+          // add this client to the list of clients interested in the results
+          if (std::find(scanningClients.begin(), scanningClients.end(), clientId) == scanningClients.end())
+            scanningClients.push_back(clientId);
         }
-        if (sendResponse) {
-          //  send json object
-          bufferJson(msg_buf);
-          client->text(msg_buf.c_str());
-          Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
-        }
-        else
-        {
-          Serial.printf("Not sending response to [%u]", client->id());
-        }
-        
+        //  send json object
+        bufferJson(msg_buf);
+        client->text(msg_buf.c_str());
+        Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
       }
       else
       {
@@ -222,25 +220,43 @@ void setup()
   server.addHandler(&ws);
 
   server.begin();
-}
 
-void doScan(uint32_t clientId) {
-  deviceJson.devices = scanManager->scan();
-  ws.printf(clientId, msg_buf.c_str());
+  // scan once on power-up
+  // deviceJson.devices = scanManager->scan();
+  // bufferJson(msg_buf);
+  // Serial.println("Sending data to all connected clients!");
+  // ws.printfAll(msg_buf.c_str());
 }
 
 void loop()
 {
   return;
-  deviceJson.devices = scanManager->scan();
-  size_t currentNumDevices = deviceJson.devices.size();
-  bool deviceUpdates = currentNumDevices != lastNumDevices;
-
-  if (deviceUpdates)
+  if (shouldScan)
   {
+    if (!scanManager->isScanning)
+      deviceJson.devices = scanManager->scan();
+    else
+    {
+      // already scanning, so wait for it to finish
+      while (scanManager->isScanning)
+      {
+        delay(500);
+      }
+    }
+    // prepare the JSON response after results are in
     bufferJson(msg_buf);
-    ws.printfAll(msg_buf.c_str());
+    // notify all interested clients
+    for (const auto &clientId : scanningClients)
+    {
+      Serial.printf("Trying to send to client [%u]\n", clientId);
+      if (ws.hasClient(clientId)){
+        ws.printf(clientId, msg_buf.c_str());
+        Serial.printf("Sent %s to %u\n", msg_buf.c_str(), clientId);
+      }
+      else Serial.printf("Cannot find client [%u]\n", clientId);
+    }
+
+    scanningClients.clear();
+    shouldScan = false;
   }
-  lastNumDevices = currentNumDevices;
-  delay(100);
 }

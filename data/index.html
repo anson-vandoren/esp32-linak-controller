@@ -6,9 +6,7 @@
     <meta charset="utf-8" />
     <link rel="stylesheet" type="text/css"
         href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css">
-</head>
 
-<body>
     <script language="javascript" type="text/javascript">
 
         var url = "ws://192.168.86.88/ws";
@@ -121,7 +119,7 @@
                         cell3.innerHTML = `<button id="connect-${rowNum}" onclick="connect('${addr}')">Connect</button>`
                         rowNum++;
                     }
-                }
+                } else (console.log("No devices found"));
             } catch (err) {
                 console.log(`Couldn't parse response into JSON: ${err} (${evt.data})`);
                 return;
@@ -156,6 +154,9 @@
         window.addEventListener("load", init, false);
 
     </script>
+</head>
+
+<body>
 
     <div class="container">
         <div class="row">

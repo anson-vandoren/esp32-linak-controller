@@ -63,13 +63,18 @@ void LinakScanManager::init()
     AdvDevCB *cb = new AdvDevCB();
     cb->dpgDevices = &dpgDevices;
     pBLEScan->setAdvertisedDeviceCallbacks(cb, true); // accept duplicates because name may be updated
+    isScanning = false;
 }
 
 std::map<std::string, std::string> LinakScanManager::scan()
 {
+    if (isScanning) return dpgDevices;
     dpgDevices.clear();
     int scanTime = 5;
+    isScanning = true;
     pBLEScan->start(scanTime, false);
+    isScanning = false;
     pBLEScan->clearResults();
+
     return dpgDevices;
 }

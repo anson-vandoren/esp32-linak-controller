@@ -16,6 +16,8 @@ class LinakScanManager
 public:
     void init();
     std::map<std::string, std::string> scan();
+
+    bool isScanning = false;
 private:
     BLEScan* pBLEScan = nullptr;
     std::map<std::string, std::string> dpgDevices;
