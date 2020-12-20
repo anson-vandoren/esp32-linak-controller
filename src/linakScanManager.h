@@ -3,10 +3,15 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-class AdvertisedDeviceCB : public BLEAdvertisedDeviceCallbacks
+class AdvDevCB : public BLEAdvertisedDeviceCallbacks
 {
+    AdvDevCB();
 public:
     void onResult(BLEAdvertisedDevice device);
+
+private:
+    friend class LinakScanManager;
+    std::map<std::string, std::string> *dpgDevices;
 };
 
 class LinakScanManager
@@ -16,7 +21,8 @@ public:
     std::map<std::string, std::string> scan();
 
     bool isScanning = false;
+
 private:
-    BLEScan* pBLEScan = nullptr;
+    BLEScan *pBLEScan = nullptr;
     std::map<std::string, std::string> dpgDevices;
 };

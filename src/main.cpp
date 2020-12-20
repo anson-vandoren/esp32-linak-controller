@@ -7,57 +7,24 @@
 #include "config.h"
 #include <util.h>
 #include <linakScanManager.h>
+#include <webserver.h>
 
-LinakScanManager *scanManager;
+#define LED_PIN 2
 
 // NOTE: create a config.h file and in that file include the lines
 // #define WIFI_SSID "myWifiSsid"
 // #define WIFI_PASSWORD "mySuperSecretWifiPassword"
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
-const char *msg_toggle_led = "toggleLED";
-const char *msg_get_led = "getLEDState";
-const int led_pin = 2;
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
+LinakScanManager *scanManager;
 
-std::string msg_buf;
-bool led_state = 0;
-uint16_t lastValue = 0;
-uint8_t lastNumDevices = 0;
-
-bool shouldScan = false;
-std::vector<uint32_t> scanningClients;
-
-struct JsonData
-{
-  bool led_state = false;
-  uint16_t current_value = 0;
-  std::map<std::string, std::string> devices;
-  unsigned long millis;
-} deviceJson;
-const size_t JSON_ENTRIES = 4 + 10;
-
-void bufferJson(std::string &buf)
-{
-  buf.clear();
-  deviceJson.millis = millis();
-  StaticJsonDocument<JSON_OBJECT_SIZE(JSON_ENTRIES)> doc;
-  doc["led_state"] = deviceJson.led_state;
-  doc["current_value"] = deviceJson.current_value;
-  doc["time"] = deviceJson.millis;
-
-  if (deviceJson.devices.size() != 0)
-  {
-    for (auto &kv : deviceJson.devices)
-    {
-      doc["devices"][kv.first] = kv.second;
-    }
-  }
-
-  serializeJson(doc, buf);
-}
+std::string msg_buf {};
+bool shouldScan {false};
+std::vector<uint32_t> scanningClients {};
+JsonData deviceJson {};
 
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
@@ -66,11 +33,10 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
   switch (type)
   {
   case WS_EVT_CONNECT:
-    // client connected
     Serial.print("Connection from: ");
     Serial.println(ip);
 
-    bufferJson(msg_buf); // send JSON state on new connection
+    bufferDeviceJson(deviceJson, msg_buf); // send JSON state on new connection
     client->text(msg_buf.c_str());
     Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
     break;
@@ -95,14 +61,13 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         // check if it's a known message
         if (strcmp((char *)data, "toggleLED") == 0)
         {
-          led_state = led_state ? false : true;
-          deviceJson.led_state = led_state;
-          Serial.printf("Toggling LED to %u\n", led_state);
-          digitalWrite(led_pin, led_state);
+          deviceJson.led_state = !deviceJson.led_state;
+          Serial.printf("Toggling LED to %u\n", deviceJson.led_state);
+          digitalWrite(LED_PIN, deviceJson.led_state);
         }
         else if (strcmp((char *)data, "getLEDState") == 0)
         {
-          bufferJson(msg_buf);
+          bufferDeviceJson(deviceJson, msg_buf);
           client->text(msg_buf.c_str());
           Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
         }
@@ -132,7 +97,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
 
         if (sendResponse) {
           //  send json object
-          bufferJson(msg_buf);
+          bufferDeviceJson(deviceJson, msg_buf);
           client->text(msg_buf.c_str());
           Serial.printf("Sent to [%u]: %s\n", client->id(), msg_buf.c_str());
         }
@@ -160,36 +125,11 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
   }
 }
 
-// callback: send homepage
-void onIndexRequest(AsyncWebServerRequest *request)
-{
-  IPAddress remote_ip = request->client()->remoteIP();
-  Serial.println("[" + remote_ip.toString() + "] HTTP GET request of" + request->url());
-  request->send(SPIFFS, "/index.html", "text/html");
-}
-
-// callback: send style sheet
-void onCSSRequest(AsyncWebServerRequest *request)
-{
-  IPAddress remote_ip = request->client()->remoteIP();
-  Serial.println("[" + remote_ip.toString() +
-                 "] HTTP GET request of " + request->url());
-  request->send(SPIFFS, "/style.css", "text/css");
-}
-
-// callback: send 404
-void onPageNotFound(AsyncWebServerRequest *request)
-{
-  IPAddress remote_ip = request->client()->remoteIP();
-  Serial.println("[" + remote_ip.toString() + "] HTTP GET request of " + request->url());
-  request->send(404, "text/plain", "Not found");
-}
-
 void setup()
 {
   scanManager = new LinakScanManager();
-  pinMode(led_pin, OUTPUT);
-  digitalWrite(led_pin, LOW);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
   Serial.println();
@@ -226,7 +166,7 @@ void setup()
 
   // scan once on power-up
   deviceJson.devices = scanManager->scan();
-  bufferJson(msg_buf);
+  bufferDeviceJson(deviceJson, msg_buf);
   Serial.println("Sending data to all connected clients!");
   ws.textAll(msg_buf.c_str());
 }
@@ -246,7 +186,7 @@ void loop()
       }
     }
     // prepare the JSON response after results are in
-    bufferJson(msg_buf);
+    bufferDeviceJson(deviceJson, msg_buf);
     // notify all interested clients
     for (const uint32_t &clientId : scanningClients)
     {

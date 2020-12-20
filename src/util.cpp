@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
+#include <util.h>
 
 void printBytes(std::string value)
 {
@@ -25,4 +27,23 @@ void printBytes(uint8_t *strPrt, size_t length)
     }
     Serial.println();
     return;
+}
+
+void bufferDeviceJson(const JsonData &deviceData, std::string &buf)
+{
+  buf.clear();
+  StaticJsonDocument<JSON_OBJECT_SIZE(JSON_ENTRIES)> doc;
+  doc["led_state"] = deviceData.led_state;
+  doc["current_value"] = deviceData.current_value;
+  doc["time"] = millis();
+
+  if (deviceData.devices.size() != 0)
+  {
+    for (auto &kv : deviceData.devices)
+    {
+      doc["devices"][kv.first] = kv.second;
+    }
+  }
+
+  serializeJson(doc, buf);
 }
